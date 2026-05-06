@@ -1,0 +1,2 @@
+"N","mean_center1","mean_center2","var_center1","var_center2","MSE1","MSE2","true_center1","true_center2","WAIC"
+5000,-7.69,2.17,0.0723,0.0159,0.164,0.0154,-8,2.2,382.7
