@@ -1,3 +1,0 @@
-"true_cluster_weight" "N" "mean_center1" "mean_center2" "var_center1" "var_center2" "MSE1" "MSE2" "true_center1" "true_center2"
-0.34 10000 2.09 2.28 NA NA 50.3 0.00575 -5 2.2
-0.95 10000 -4.93 2.18 NA NA 0.00523 0.000572 -5 2.2
