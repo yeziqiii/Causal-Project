@@ -4,96 +4,91 @@ library(DIRECT)
 library(loo)
 source("determine_K.R")
 source("initialization.R")
+
 mcmc_clust <- function(
     bx, by, byse,
-    etas = NULL,
+    eta = NULL,
     num_null = 0,
     num_junk = 0,
-    Q1 = 0,
-    Q2 = 0,
     df = 4
 ){
-  
-  
   theta_estimates <- by / bx
   sigma_estimates <- byse / abs(bx)
-  
-  # Deal with null cluster in the synthetic data
-  
-  if (num_null == 1 && Q1 > 0) {
-    theta_null <- rnorm(Q1, 0, 1)
-    sigma_null <- rep(1, Q1)
-    
-    theta_estimates <- c(theta_null, theta_estimates)
-    sigma_estimates <- c(sigma_null, sigma_estimates)
-  }
-  
-  # Deal with junk cluster in the synthetic data
-  
-  if (num_junk == 1 && Q2 > 0) {
-    theta_junk <- rt(Q2, df)
-    sigma_junk <- rep(sqrt(2), Q2)
-    
-    theta_estimates <- c(theta_estimates, theta_junk)
-    sigma_estimates <- c(sigma_estimates, sigma_junk)
-  }
-  
   J <- length(theta_estimates)
   
-  
-  # If we do not provide eta, then we estimate the number of clusters and use uniform etas
-  
-  if (is.null(etas)) {
+  if (is.null(eta)) {
+    cat("--------------------- Estimating K (number of regular clusters) ---------------------")
+    K_res <- determine_K(
+      bx,
+      by,
+      byse,
+      num_null,
+      num_junk
+    )
     
-    K <- determine_K(bx, by, byse, num_null, num_junk)
-    
-    etas <- generate_priors(
+    K <- K_res$best_K
+    cat("Estimated K =", K, "\n\n")
+    eta <- generate_priors(
       K = K,
       J = J,
       num_null = num_null,
       num_junk = num_junk,
       mode = "uniform"
     )
-    
   } else {
-    
-    K <- ncol(etas) - num_null - num_junk
-    
-    if (nrow(etas) != J) {
-      stop("etas must have J rows")
+    K <- ncol(eta) - num_null - num_junk
+    if (nrow(eta) != J) {
+      stop("eta must have J rows")
     }
   }
   
-
   rho <- rep(0, K)
   phi <- rep(1, K)
+  gamma <- 1
+  kappa <- 2
   
   data_list <- list(
     J = J,
     K = K,
     rho = rho,
     phi = phi,
+    gamma = gamma,
+    kappa = kappa,
     theta_estimates = theta_estimates,
     sigma_estimates = sigma_estimates,
     num_null = num_null,
     num_junk = num_junk,
     deg_freedom = df,
-    etas = etas
+    eta = eta
   )
-  
   
   model <- stan_model(file = "genetic_variant_modelv2.stan")
   
-  base_init <- initialize_centers_weighted(
-    theta_estimates,
-    sigma_estimates,
-    K
+  base_init <- initialize_centers_eta(
+    theta_estimates = theta_estimates,
+    sigma_estimates = sigma_estimates,
+    eta = eta,
+    K = K,
+    num_null = num_null,
+    num_junk = num_junk
   )
   
-  init_fun <- function() {
-    list(cluster_center = base_init + rnorm(K, 0, 1e-3))
+  if (length(base_init) != K) {
+    stop("Length of base_init must be equal to K.")
   }
   
+  init_fun <- function() {
+    x <- sort(base_init)
+    for (i in 2:K) {
+      if (x[i] <= x[i - 1]) {
+        x[i] <- x[i - 1] + 1e-6
+      }
+    }
+    
+    list(
+      cluster_center = x
+    )
+  }
   
   fit <- rstan::sampling(
     model,
@@ -104,12 +99,17 @@ mcmc_clust <- function(
     chains = 4
   )
   
+  log_lik <- loo::extract_log_lik(
+    fit,
+    merge_chains = FALSE
+  )
   
-  log_lik <- loo::extract_log_lik(fit, merge_chains = FALSE)
-  waic_result <- loo::waic(log_lik, pointwise = TRUE)
+  waic_result <- loo::waic(
+    log_lik,
+    pointwise = TRUE
+  )
+  
   waic_values <- waic_result$estimates["waic", "Estimate"]
-  
- 
   
   fit_summary <- summary(fit)$summary
   
@@ -118,14 +118,24 @@ mcmc_clust <- function(
     "mean"
   ]
   
-  # pi_estimates <- fit_summary[
-  #   paste0("pi[", 1:(K + num_null + num_junk), "]"),
-  #   "mean"
-  # ]
+  post <- rstan::extract(fit)
+  
+  pi_estimates <- apply(
+    post$pi,
+    c(2, 3),
+    mean
+  )
+  
+  cluster_assignment <- apply(
+    pi_estimates,
+    1,
+    which.max
+  )
   
   return(list(
     center_estimates = center_estimates,
-   # pi_estimates = pi_estimates,
+    pi_estimates = pi_estimates,
+    cluster_assignment = cluster_assignment,
     waic = waic_values
   ))
 }

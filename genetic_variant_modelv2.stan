@@ -3,12 +3,14 @@ data {
   int K;  
   vector[K] rho;
   vector[K] phi;
+  real<lower=0> gamma;
+  real<lower=0> kappa;
   vector[J] theta_estimates;  
   vector[J] sigma_estimates;  
   int num_null;
   int num_junk;
   real deg_freedom;
-  matrix[J, K + num_null + num_junk] etas;
+  matrix[J, K + num_null + num_junk] eta;
 }
 
 
@@ -16,6 +18,7 @@ parameters {
   ordered[K] cluster_center;
   //vector[K] cluster_center;
   vector<lower=0>[K + num_null + num_junk] alpha;
+  //real<lower=0> alpha;
   simplex[K + num_null + num_junk] pi[J];
 }
 
@@ -26,19 +29,19 @@ model {
   cluster_center ~ normal(rho, phi);
   //cluster_center ~ normal(0, 5);
   
-  //alpha ~ gamma(ga, kappa);
+  alpha ~ gamma(kappa, gamma);
   //alpha ~ normal(0, 2);
   //alpha ~ exponential(0.02);
   //alpha ~ gamma(2, 1);
   
-  alpha ~ lognormal(0, 0.5);
+  //alpha ~ lognormal(0, 0.5);
 
   
   if (num_of_clusters > 1) {
     for (j in 1:J) {
-      vector[num_of_clusters] diri_param = to_vector(etas[j]);
-      pi[j] ~ dirichlet(alpha .* diri_param);
+      vector[num_of_clusters] diri_param = to_vector(eta[j]);
       //pi[j] ~ dirichlet(alpha * diri_param);
+      pi[j] ~ dirichlet(alpha .* diri_param);
     }
   }
   

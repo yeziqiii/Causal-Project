@@ -1,25 +1,25 @@
-initialize_centers_weighted <- function(theta, sigma, K, jitter_sd = 1e-3) {
-  w <- 1 / (sigma^2 + 1e-12)
-  probs <- seq(0, 1, length.out = K + 2)[2:(K + 1)]
-  centers <- as.numeric(weighted_quantile(theta, w, probs))
+initialize_centers_eta <- function(
+    theta_estimates,
+    sigma_estimates,
+    eta,
+    K,
+    num_null = 0,
+    num_junk = 0
+) {
+  # Find cols for the substantive cluster
+  start_col <- 1 + num_null
+  end_col <- num_null + K
   
-  # Aligh with ordered center in the stan model
-  for (k in 2:K) {
-    if (centers[k] <= centers[k - 1]) {
-      centers[k] <- centers[k - 1] + 1e-4
-    }
+  eta_regular <- eta[, start_col:end_col, drop = FALSE]
+  
+  centers <- numeric(K)
+  
+  for (k in 1:K) {
+    w <- eta_regular[, k] / sigma_estimates^2
+    centers[k] <- sum(w * theta_estimates) / sum(w)
   }
   
-  centers
-}
-
-weighted_quantile <- function(x, w, probs) {
-  o <- order(x)
-  x <- x[o]
-  w <- w[o] / sum(w)
-  cw <- cumsum(w)
-  sapply(probs, function(p) {
-    idx <- which(cw >= p)[1]
-    x[idx]
-  })
+  centers <- sort(centers)
+  
+  return(centers)
 }

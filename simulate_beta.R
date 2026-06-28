@@ -19,7 +19,7 @@ simulate_beta <- function(theta_data, N = 1000, tau) {
     beta_yj_hat <- rnorm(1, theta_data[j] * beta_xj_hat, sqrt(tau / (N * MAF_j * (1 - MAF_j))))
     theta_j_hat <- beta_yj_hat / beta_xj_hat
     se_beta_yj_hat <- sqrt(1 / (N * MAF_j * (1 - MAF_j)))
-    sigma_j_hat <- se_beta_yj_hat / beta_xj_hat
+    sigma_j_hat <- se_beta_yj_hat / abs(beta_xj_hat)
     
     # Append values to lists
     beta_xj_hat_list[j] <- beta_xj_hat

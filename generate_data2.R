@@ -1,112 +1,181 @@
-generate_data <- function(N, p, b, a, true_theta, c, h2_m = 0.5, h2_x = 0.5, h2_y = 0.5) {
-  d <- length(a)  # Num of mechanisms
-  J <- sum(sapply(a, length))  # Num of genetic variants
+generate_data <- function(
+    N,
+    p,
+    b,
+    a,
+    true_theta,
+    c,
+    h2_m = 0.5,
+    h2_x = 0.5,
+    h2_y = 0.5,
+    rho = 0.2
+) {
   
+  D <- length(a)                        # number of mechanisms
+  J <- sum(sapply(a, length))           # number of genetic variants
   
-  var_G <- 2 * p * (1 - p)  # Var(S_j) = 2p(1-p)
-  Vg_m_list <- numeric(d)
-  for (k in 1:d) {
-    L_k <- length(a[[k]])
-    sum_sq <- sum(a[[k]]^2)
-    Vg_m_list[k] <- sum_sq * var_G
+  var_G <- 2 * p * (1 - p)              # Gj ~ Binomial(2, p)
+  
+  # Genetic variance components for mechanisms
+  V_M_g <- numeric(D)
+  
+  for (i in 1:D) {
+    V_M_g[i] <- var_G * sum(a[[i]]^2)
   }
-  Vg_m <- mean(Vg_m_list)
   
+  # Residual variance for mechanisms
+  V_M_noise <- ((1 - h2_m) / h2_m) * V_M_g
   
-  Vg_x <- 0
-  for (k in 1:d) {
-    Vg_x <- Vg_x + b[k]^2 * Vg_m_list[k]
+  # Genetic variance component for X
+  V_X_g <- 0
+  
+  for (i in 1:D) {
+    V_X_g <- V_X_g + b[i]^2 * V_M_g[i]
   }
   
+  # Residual variance for X
+  V_X_noise <- ((1 - h2_x) / h2_x) * V_X_g
   
-  Vg_y <- true_theta^2 * Vg_x
-  for (k in 1:d) {
-    Vg_y <- Vg_y + c[k]^2 * Vg_m_list[k]
+  # Genetic variance component for Y
+  V_Y_g <- true_theta^2 * V_X_g
+  
+  for (i in 1:D) {
+    V_Y_g <- V_Y_g + c[i]^2 * V_M_g[i]
   }
   
+  # Residual variance for Y
+  V_Y_noise <- ((1 - h2_y) / h2_y) * V_Y_g
   
-  Vem <- (1 - h2_m) / h2_m * Vg_m
-  Vex <- (1 - h2_x) / h2_x * Vg_x
-  Vey <- (1 - h2_y) / h2_y * Vg_y
+  # Standard deviations
+  sd_M_noise <- sqrt(V_M_noise)
+  sd_X_noise <- sqrt(V_X_noise)
+  sd_Y_noise <- sqrt(V_Y_noise)
   
-  
-  sd_em <- sqrt(Vem)
-  sd_ex <- sqrt(Vex)
-  sd_ey <- sqrt(Vey)
-  
-  
-  M <- matrix(0, nrow = N, ncol = d)
+  M <- matrix(0, nrow = N, ncol = D)
   G <- matrix(0, nrow = N, ncol = J)
+  
   X <- numeric(N)
   Y <- numeric(N)
   
-  for (i in 1:N) {
+  # Generate samples
+  for (n in 1:N) {
     
-    #G_sample <- rnorm(J, mean = 2*p, sd = sqrt(2*p*(1-p)))  # Approximate the binomial dist
-    G_sample <- matrix(rbinom(J, size = 2, prob = p), ncol = J)
-    G[i, ] <- G_sample
+    # Generate genetic variants
+    G_sample <- rbinom(
+      J,
+      size = 2,
+      prob = p
+    )
     
+    G[n, ] <- G_sample
     
-    M_sample <- numeric(d)
+    # Generate mechanisms
+    M_sample <- numeric(D)
+    
     start_idx <- 1
-    for (k in 1:d) {
-      L_k <- length(a[[k]])
-      S_k <- G_sample[start_idx:(start_idx + L_k - 1)]
-      start_idx <- start_idx + L_k
+    
+    for (i in 1:D) {
       
+      L_i <- length(a[[i]])
       
-      M_sample[k] <- sum(a[[k]] * S_k) + rnorm(1, sd = sd_em)
+      s_i <- G_sample[
+        start_idx:(start_idx + L_i - 1)
+      ]
+      
+      start_idx <- start_idx + L_i
+      
+      M_sample[i] <- sum(a[[i]] * s_i) +
+        rnorm(1, mean = 0, sd = sd_M_noise[i])
     }
-    M[i, ] <- M_sample
     
+    M[n, ] <- M_sample
     
-    genetic_signal_X <- sum(b * M_sample)
-    X[i] <- genetic_signal_X + rnorm(1, sd = sd_ex)
+    # Generate correlated residuals for X and Y
+    z1 <- rnorm(1)
+    z2 <- rnorm(1)
     
+    epsilon_X <- sd_X_noise * z1
     
-    genetic_signal_Y <- true_theta * X[i] + sum(c * M_sample)
-    Y[i] <- genetic_signal_Y + rnorm(1, sd = sd_ey)
+    epsilon_Y <- rho * sd_Y_noise * z1 +
+      sqrt(1 - rho^2) * sd_Y_noise * z2
+    
+    # Generate exposure
+    X_signal <- sum(b * M_sample)
+    
+    X[n] <- X_signal + epsilon_X
+    
+    # Generate outcome
+    Y_signal <- true_theta * X[n] +
+      sum(c * M_sample)
+    
+    Y[n] <- Y_signal + epsilon_Y
   }
   
-  return(list(G = G, M = M, X = X, Y = Y))
+  return(list(
+    G = G,
+    M = M,
+    X = X,
+    Y = Y
+  ))
 }
 
-
-estimate_theta <- function(samples){
-  N <- length(samples$X)
-  J <- ncol(samples$G)  
-  bx <- numeric(J)  
-  by <- numeric(J)  
-  theta_estimates <- numeric(J)  
-  sigma_estimates <- numeric(J)  
-  bxse <- numeric(J)  
-  byse <- numeric(J)  
+estimate_theta <- function(samples) {
   
-  X_sample <- samples$X  
-  Y_sample <- samples$Y 
+  N <- length(samples$X)
+  J <- ncol(samples$G)
+  
+  bx <- numeric(J)
+  by <- numeric(J)
+  
+  theta_estimates <- numeric(J)
+  sigma_estimates <- numeric(J)
+  
+  bxse <- numeric(J)
+  byse <- numeric(J)
+  
+  X_sample <- samples$X
+  Y_sample <- samples$Y
   
   for (j in 1:J) {
-    G_jth_sample <- samples$G[, j]  
     
-    # X ~ G
-    X_G <- data.frame(X = X_sample, G = G_jth_sample)
-    model_X <- lm(X ~ G, data = X_G)
+    G_jth_sample <- samples$G[, j]
     
-    # Y ~ G
-    Y_G <- data.frame(Y = Y_sample, G = G_jth_sample)
-    model_Y <- lm(Y ~ G, data = Y_G)
+    X_G <- data.frame(
+      X = X_sample,
+      G = G_jth_sample
+    )
     
+    model_X <- lm(
+      X ~ G,
+      data = X_G
+    )
+    
+    Y_G <- data.frame(
+      Y = Y_sample,
+      G = G_jth_sample
+    )
+    
+    model_Y <- lm(
+      Y ~ G,
+      data = Y_G
+    )
+    
+    # Regression coefficients
     beta_x <- coef(model_X)["G"]
     beta_y <- coef(model_Y)["G"]
+    
     bx[j] <- beta_x
     by[j] <- beta_y
     
+    # Ratio estimate
     theta_hat <- beta_y / beta_x
+    
     theta_estimates[j] <- theta_hat
     
-    
+    # Standard errors
     bxse[j] <- summary(model_X)$coefficients["G", "Std. Error"]
     byse[j] <- summary(model_Y)$coefficients["G", "Std. Error"]
+    
     sigma_estimates[j] <- abs(byse[j] / bx[j])
   }
   
@@ -115,7 +184,7 @@ estimate_theta <- function(samples){
     by = by,
     theta_estimates = theta_estimates,
     sigma_estimates = sigma_estimates,
-    bxse = bxse,  
-    byse = byse   
+    bxse = bxse,
+    byse = byse
   ))
 }
