@@ -509,7 +509,7 @@ experiment2 <- function(
       )
       
       for (k in 1:K) {
-        row_mr[[paste0("center", k)]] <- mr_centers[k]
+        row_mr[[paste0("center", k)]] <- round(mr_centers[k], 3)
       }
       
       raw_results <- rbind(
@@ -539,7 +539,7 @@ experiment2 <- function(
       )
       
       mean_centers <- colMeans(
-        center_mat,
+        center_mat
       )
       
       summary_row <- data.frame(
@@ -706,7 +706,7 @@ experiment3 <- function(
       )
     }
     
-    summary_row$accuracy <- mean(estimated_K_vec == K0)
+    summary_row$accuracy <- signif(mean(estimated_K_vec == K0), 4)
     
     summary_results <- rbind(
       summary_results,
